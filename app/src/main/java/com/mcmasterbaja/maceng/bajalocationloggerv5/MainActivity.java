@@ -123,6 +123,7 @@ public class MainActivity extends AppCompatActivity {
     private static long delay = 1000L;
 
     private int logCount = 0;
+    long initialT = 0;
     private String timeStamp;
     private String mLatitudeText;
     private String mLongitudeText;
@@ -329,7 +330,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public String logTime(){
-        long initialT = 0;
         if(logCount == 1){
             initialT = System.currentTimeMillis();
         }
