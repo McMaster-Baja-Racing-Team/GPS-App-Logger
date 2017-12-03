@@ -37,7 +37,9 @@ import com.google.android.gms.tasks.Task;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
+import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Timer;
@@ -45,22 +47,6 @@ import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity {
     // Relevant Object declarations
-/*
-    // Object to update UI as timer is running
-    Runnable updateUI = new Runnable() {
-        @Override
-        public void run() {
-            timeText = findViewById(R.id.timeText);
-            timeText.setText(logTime());
-            logValueText.setText(Integer.toString(logCount));
-
-        }
-    };
-
-    // Timer and Timer tasks objects to run logging repeatedly
-    Timer timer;
-    TimerTask logLocation;
-    */
 
     // File objects
     File currentLog;
@@ -69,8 +55,7 @@ public class MainActivity extends AppCompatActivity {
     // Writer Objects
     BufferedWriter writer;
 
-
-    //Location API object
+    //Location API + Settings objects
     /**
      * Provides access to the Fused Location Provider API.
      */
@@ -102,17 +87,19 @@ public class MainActivity extends AppCompatActivity {
      */
     private Location mCurrentLocation;
 
+    // Date Object for filename
+    public Date currentDate;
 
     // UI Objects
-    public TextView timeText;
+    public TextView fileName;
     public TextView logValueText;
     public Button mainButton;
 
+    // Power Manager
     public PowerManager.WakeLock wl;
 
     // Booleans to Indicate when to log data
     public boolean mRequestingLocationUpdates = false;
-
 
     // Labels for Data
     private static final String folder = "LocationLogs";
@@ -120,7 +107,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String latL = "Lat";
     private static final String lonL = "Long";
     private static final String altL = "Alt";
-    private static final String speedL = "Speed";
+    private static final String radialAccL = "Radial Accuracy";
+
 
     private static final String TAG = MainActivity.class.getSimpleName();
     /**
@@ -128,42 +116,30 @@ public class MainActivity extends AppCompatActivity {
      */
     private static final int REQUEST_CHECK_SETTINGS = 0x1;
 
-
     // Variables to Store Relevant Data
-    private static long delay = 1000L;
+    public String currentFileName;
+    public int fileCount = 0;
 
-    private long speedKmph;
-    private long timeInitial;
+    private static long delay = 1000L;
 
     private int logCount = 0;
     private String timeStamp;
     private String mLatitudeText;
     private String mLongitudeText;
     private String mAltitudeText;
-    private String mSpeedText;
 
-    private String mLatitudeAcc;
-    private String mLongitudeAcc;
-    private String mAltitudeAcc;
-    private String mSpeedAcc;
+    private String mRadialAccText;
 
-    private boolean timerStart = false;
     private List<String> dataLog = new ArrayList<>();
-
-
-
-
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-
-
+        currentDate = new Date();
+        makeNewFile(null);
         logFolder = makeStorageDir(folder);
-
 
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         mSettingsClient = LocationServices.getSettingsClient(this);
@@ -175,6 +151,7 @@ public class MainActivity extends AppCompatActivity {
         buildLocationSettingsRequest();
 
     }
+
     private void createLocationRequest() {
         mLocationRequest = new LocationRequest();
 
@@ -197,7 +174,7 @@ public class MainActivity extends AppCompatActivity {
             public void onLocationResult(LocationResult locationResult) {
                 super.onLocationResult(locationResult);
                 mCurrentLocation = locationResult.getLastLocation();
-                updateUI();
+                logLocationData();
             }
         };
     }
@@ -221,15 +198,12 @@ public class MainActivity extends AppCompatActivity {
                     case Activity.RESULT_CANCELED:
                         Log.i(TAG, "User chose not to make required location settings changes.");
                         mRequestingLocationUpdates = false;
-                        updateUI();
                         break;
 
                 }
                 break;
         }
     }
-
-
 
     protected void onStart(){
         super.onStart();
@@ -244,18 +218,11 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-
-
-
     public void logSwitch (View view){
         mRequestingLocationUpdates = !mRequestingLocationUpdates;
 
         if(mRequestingLocationUpdates) {
             mainButton.setText("Stop");
-            if (!timerStart){
-                timeInitial = System.currentTimeMillis();
-                timerStart = true;
-            }
             startLocationUpdates();
         }
         else{
@@ -278,7 +245,6 @@ public class MainActivity extends AppCompatActivity {
                         mFusedLocationClient.requestLocationUpdates(mLocationRequest,
                                 mLocationCallback, Looper.myLooper());
 
-                        updateUI();
                     }
                 })
                 .addOnFailureListener(this, new OnFailureListener() {
@@ -306,8 +272,6 @@ public class MainActivity extends AppCompatActivity {
                                 mRequestingLocationUpdates = false;
                         }
 
-                        updateUI();
-
                     }
                 });
     }
@@ -315,10 +279,11 @@ public class MainActivity extends AppCompatActivity {
      * Removes location updates from the FusedLocationApi.
      */
     private void stopLocationUpdates() {
-        if (!mRequestingLocationUpdates) {
+        /*if (!mRequestingLocationUpdates) {
             Log.d(TAG, "stopLocationUpdates: updates never requested, no-op.");
             return;
         }
+        */
 
         // It is a good practice to remove location requests when the activity is in a paused or
         // stopped state. Doing so helps battery performance and is especially
@@ -332,7 +297,6 @@ public class MainActivity extends AppCompatActivity {
                 });
     }
 
-
     public void onResume(){
         super.onResume();
         setContentView(R.layout.activity_main);
@@ -345,35 +309,14 @@ public class MainActivity extends AppCompatActivity {
         else{
             mainButton.setText("Start");
         }
-
         updateUI();
-
     }
-
-
 
     public void onPause() {
         super.onPause();
         storeData();
         setWakeLock();
     }
-
-
-    /*public void beginLog(){
-        timer = new Timer();
-        logLocation = new TimerTask() {
-            @Override
-            public void run() {
-                logCount++;
-
-                MainActivity.this.runOnUiThread(updateUI);
-
-            }
-        };
-        timer.schedule(logLocation, 0, delay);
-
-    }
-    */
 
     public File makeStorageDir(String albumName) {
         // Get the directory for the user's public pictures directory.
@@ -386,49 +329,56 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public String logTime(){
-        return Long.toString(System.currentTimeMillis()-timeInitial+1000L);
+        long initialT = 0;
+        if(logCount == 1){
+            initialT = System.currentTimeMillis();
+        }
+
+        return Long.toString(System.currentTimeMillis()-initialT);
     }
     
     public void updateUI(){
-        logCount++;
-        logLocationData();
-        timeText = findViewById(R.id.timeText);
-        timeText.setText(logTime());
+        fileName = findViewById(R.id.fileName);
+        fileName.setText(currentFileName);
         logValueText = findViewById(R.id.logText);
         logValueText.setText(Integer.toString(logCount));
     }
 
     public void logLocationData(){
         if (mCurrentLocation != null){
+            logCount++;
             mLatitudeText = String.format(Locale.ENGLISH, "%s: %f ", latL,
                     mCurrentLocation.getLatitude());
             mLongitudeText = String.format(Locale.ENGLISH, "%s: %f ",lonL,
                     mCurrentLocation.getLongitude());
             mAltitudeText = String.format(Locale.ENGLISH, "%s: %f ",altL,
                     mCurrentLocation.getAltitude());
+
+            mRadialAccText = String.format(Locale.ENGLISH, "%s: %f",radialAccL,
+                    mCurrentLocation.getAccuracy());
+
             timeStamp = timeL+": "+logTime()+" ";
 
-            dataLog.add(Integer.toString(logCount) + " | " + timeStamp + mLatitudeText + mLongitudeText + mAltitudeText);
-
-
+            dataLog.add(Integer.toString(logCount) + " | " + timeStamp + mLatitudeText + mLongitudeText + mAltitudeText + mRadialAccText);
         }
-
+        updateUI();
 
     }
 
     public void storeData(){
-        try {
-            currentLog = new File(logFolder,"Log");
-            writer = new BufferedWriter(new FileWriter(currentLog));
-            for(int i = 0; i < dataLog.size(); i++) {
-                writer.write(dataLog.get(i));
-                writer.newLine();
-            }
-            writer.flush();
-            writer.close();
+        if (logCount > 0 ) {
+            try {
+                writer = new BufferedWriter(new FileWriter(currentLog));
+                for (int i = 0; i < dataLog.size(); i++) {
+                    writer.write(dataLog.get(i));
+                    writer.newLine();
+                }
+                writer.flush();
+                writer.close();
 
-        }catch (java.io.IOException e){
-            Log.e("LOG_TAG","DID NOT WRITE DATA");
+            } catch (java.io.IOException e) {
+                Log.e("LOG_TAG", "DID NOT WRITE DATA");
+            }
         }
     }
 
@@ -438,5 +388,28 @@ public class MainActivity extends AppCompatActivity {
         wl.acquire();
     }
 
-}
+    public void makeNewFile(View view){
+        /* Recursive implementation, Potential risk for a large count of files
+        currentFileName =  "Log For: " + DateFormat.getDateInstance().format(currentDate) + ": " + Integer.toString(fileCount);
+        currentLog = new File(logFolder, currentFileName);
+        if(currentLog.exists()) {
+            fileCount ++;
+            makeNewFile(null);
+            logCount = 0;
+            updateUI();
+        }
+        */
 
+        currentFileName = "Log For: " + DateFormat.getDateInstance().format(currentDate) + ": " + Integer.toString(fileCount);
+        currentLog = new File(logFolder, currentFileName);
+        while(currentLog.exists()){
+            fileCount ++;
+            currentFileName = "Log For: " + DateFormat.getDateInstance().format(currentDate) + ": " + Integer.toString(fileCount);
+            currentLog = new File(logFolder, currentFileName);
+            logCount = 0;
+            updateUI();
+        }
+
+    }
+
+}
