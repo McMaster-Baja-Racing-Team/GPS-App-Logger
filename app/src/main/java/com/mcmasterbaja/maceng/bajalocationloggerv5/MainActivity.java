@@ -108,6 +108,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String lonL = "Long";
     private static final String altL = "Alt";
     private static final String radialAccL = "Radial Accuracy";
+    private static final String speedL = "Speed: ";
 
 
     private static final String TAG = MainActivity.class.getSimpleName();
@@ -128,6 +129,7 @@ public class MainActivity extends AppCompatActivity {
     private String mLatitudeText;
     private String mLongitudeText;
     private String mAltitudeText;
+    private String mSpeedText;
 
     private String mRadialAccText;
 
@@ -139,8 +141,9 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         currentDate = new Date();
-        makeNewFile(null);
         logFolder = makeStorageDir(folder);
+        makeNewFile(null);
+
 
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         mSettingsClient = LocationServices.getSettingsClient(this);
@@ -353,13 +356,16 @@ public class MainActivity extends AppCompatActivity {
                     mCurrentLocation.getLongitude());
             mAltitudeText = String.format(Locale.ENGLISH, "%s: %f ",altL,
                     mCurrentLocation.getAltitude());
+            mSpeedText = String.format(Locale.ENGLISH, "%s: %f",speedL,
+                    mCurrentLocation.getSpeed()); //In m/s
 
             mRadialAccText = String.format(Locale.ENGLISH, "%s: %f",radialAccL,
                     mCurrentLocation.getAccuracy());
 
             timeStamp = timeL+": "+logTime()+" ";
 
-            dataLog.add(Integer.toString(logCount) + " | " + timeStamp + mLatitudeText + mLongitudeText + mAltitudeText + mRadialAccText);
+            dataLog.add(Integer.toString(logCount) + " | " + timeStamp + mLatitudeText + mLongitudeText + mAltitudeText + mRadialAccText +mSpeedText);
+            Log.d("LoggingCheck", "LogCount: " + Integer.toString(logCount));
         }
         updateUI();
 
@@ -375,9 +381,10 @@ public class MainActivity extends AppCompatActivity {
                 }
                 writer.flush();
                 writer.close();
+                Log.d("Writing Check", "Writing to: " + currentFileName);
 
             } catch (java.io.IOException e) {
-                Log.e("LOG_TAG", "DID NOT WRITE DATA");
+                Log.e("Data Write Error", "DID NOT WRITE DATA" + e.getMessage());
             }
         }
     }
@@ -388,7 +395,7 @@ public class MainActivity extends AppCompatActivity {
         wl.acquire();
     }
 
-    public void makeNewFile(View view){
+    public void makeNewFile(View view) {
         /* Recursive implementation, Potential risk for a large count of files
         currentFileName =  "Log For: " + DateFormat.getDateInstance().format(currentDate) + ": " + Integer.toString(fileCount);
         currentLog = new File(logFolder, currentFileName);
@@ -399,17 +406,19 @@ public class MainActivity extends AppCompatActivity {
             updateUI();
         }
         */
-
-        currentFileName = "Log For: " + DateFormat.getDateInstance().format(currentDate) + ": " + Integer.toString(fileCount);
-        currentLog = new File(logFolder, currentFileName);
-        while(currentLog.exists()){
-            fileCount ++;
+        if (!mRequestingLocationUpdates) {
             currentFileName = "Log For: " + DateFormat.getDateInstance().format(currentDate) + ": " + Integer.toString(fileCount);
             currentLog = new File(logFolder, currentFileName);
-            logCount = 0;
-            updateUI();
-        }
+            while (currentLog.exists()) {
+                fileCount++;
+                currentFileName = "Log For: " + DateFormat.getDateInstance().format(currentDate) + ": " + Integer.toString(fileCount);
+                currentLog = new File(logFolder, currentFileName);
+                logCount = 0;
+                updateUI();
+                dataLog.clear();
+            }
 
+        }
     }
 
 }
