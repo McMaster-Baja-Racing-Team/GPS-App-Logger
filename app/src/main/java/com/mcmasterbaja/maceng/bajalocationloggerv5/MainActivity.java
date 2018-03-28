@@ -1,12 +1,17 @@
 package com.mcmasterbaja.maceng.bajalocationloggerv5;
 
 import android.app.Activity;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.location.Location;
 import android.os.Environment;
+import android.os.Handler;
 import android.os.Looper;
+import android.os.Message;
 import android.os.PowerManager;
 import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
@@ -37,13 +42,18 @@ import com.google.android.gms.tasks.Task;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
     // Relevant Object declarations
@@ -87,6 +97,15 @@ public class MainActivity extends AppCompatActivity {
      */
     private Location mCurrentLocation;
 
+    /**
+     * Bluetooth Stuff
+     */
+    BluetoothAdapter mBluetoothAdapter;
+    BluetoothDevice mDevice;
+    Thread mConnectThread;
+    Thread mConnectedThread;
+
+
     // Date Object for filename
     public Date currentDate;
 
@@ -97,9 +116,14 @@ public class MainActivity extends AppCompatActivity {
 
     // Power Manager
     public PowerManager.WakeLock wl;
+    // Boolean to manage when to override bluetooth syncing
+    public boolean overrideBT = false;
 
-    // Booleans to Indicate when to log data
+    // Boolean to Indicate when to log data
     public boolean mRequestingLocationUpdates = false;
+
+    // String to represent device name
+    public String DEVICE_NAME = "Adafruit Bluefruit LE";
 
     // Labels for Data
     private static final String folder = "LocationLogs";
@@ -130,10 +154,117 @@ public class MainActivity extends AppCompatActivity {
     private String mLongitudeText;
     private String mAltitudeText;
     private String mSpeedText;
-
     private String mRadialAccText;
+    private String BTcode;
+
+
 
     private List<String> dataLog = new ArrayList<>();
+
+    /**
+     * Private classes for threads made to handle the bluetooth services
+     */
+    //Connect Thread
+    private class ConnectThread extends Thread {
+        private final BluetoothSocket mmSocket;
+        private final BluetoothDevice mmDevice;
+        private final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb");
+        public ConnectThread(BluetoothDevice device) {
+            BluetoothSocket tmp = null;
+            mmDevice = device;
+            try {
+                tmp = device.createRfcommSocketToServiceRecord(MY_UUID);
+            } catch (IOException e) { }
+            mmSocket = tmp;
+        }
+        public void run() {
+            mBluetoothAdapter.cancelDiscovery();
+            try {
+                mmSocket.connect();
+            } catch (IOException connectException) {
+                try {
+                    mmSocket.close();
+                } catch (IOException closeException) { }
+                return;
+            }
+            mConnectedThread = new ConnectedThread(mmSocket);
+            mConnectedThread.start();
+
+        }
+        public void cancel() {
+            try {
+                mmSocket.close();
+            } catch (IOException e) { }
+        }
+    }
+    //Connected Thread deals with communications once already connected in the connect thread
+    private class ConnectedThread extends Thread {
+        private final BluetoothSocket mmSocket;
+        private final InputStream mmInStream;
+        private final OutputStream mmOutStream;
+        public ConnectedThread(BluetoothSocket socket) {
+            mmSocket = socket;
+            InputStream tmpIn = null;
+            OutputStream tmpOut = null;
+            try {
+                tmpIn = socket.getInputStream();
+                tmpOut = socket.getOutputStream();
+            } catch (IOException e) { }
+            mmInStream = tmpIn;
+            mmOutStream = tmpOut;
+        }
+        public void run() {
+            byte[] buffer = new byte[1024];
+            int begin = 0;
+            int bytes = 0;
+            while (true) {
+                try {
+                    bytes += mmInStream.read(buffer, bytes, buffer.length - bytes);
+                    for(int i = begin; i < bytes; i++) {
+                        if(buffer[i] == "#".getBytes()[0]) {
+                            mHandler.obtainMessage(1, begin, i, buffer).sendToTarget();
+                            begin = i + 1;
+                            if(i == bytes - 1) {
+                                bytes = 0;
+                                begin = 0;
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    break;
+                }
+            }
+        }
+        public void write(byte[] bytes) {
+            try {
+                mmOutStream.write(bytes);
+            } catch (IOException e) { }
+        }
+        public void cancel() {
+            try {
+                mmSocket.close();
+            } catch (IOException e) { }
+        }
+    }
+    //Handler meant to send data from connected thread and be used in the main UI thread
+    Handler mHandler = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            byte[] writeBuf = (byte[]) msg.obj;
+            int begin = (int)msg.arg1;
+            int end = (int)msg.arg2;
+
+            switch(msg.what) {
+                case 1:
+                    String writeMessage = new String(writeBuf);
+                    writeMessage = writeMessage.substring(begin, end);
+                    Log.e(TAG, "Recieved data:"+writeMessage);
+                    BTcode = writeMessage;
+                    break;
+            }
+        }
+    };
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -144,6 +275,34 @@ public class MainActivity extends AppCompatActivity {
         logFolder = makeStorageDir(folder);
         makeNewFile(null);
 
+        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+        if (mBluetoothAdapter == null) {
+            // Device does not support Bluetooth
+            Log.e(TAG, "device does not support Bluetooth");
+        }
+        else {
+            if (!mBluetoothAdapter.isEnabled()) {
+                Intent enableBTIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                startActivityForResult(enableBTIntent, 1);
+            }
+            Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
+            if (pairedDevices.size() > 0) {
+                for (BluetoothDevice device : pairedDevices) {
+                    if (device.getName().equals(DEVICE_NAME)) {
+                        mDevice = device;
+                        Log.e(TAG, "Device Name:"+mDevice.getName());
+                        break;
+                    }
+
+                }
+            }
+            else{
+                Toast toast = Toast.makeText(this, "No Paired Devices", Toast.LENGTH_LONG);
+                toast.show();
+            }
+        }
+
+
 
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         mSettingsClient = LocationServices.getSettingsClient(this);
@@ -153,6 +312,11 @@ public class MainActivity extends AppCompatActivity {
         createLocationCallback();
         createLocationRequest();
         buildLocationSettingsRequest();
+
+        Log.e(TAG,"Running BT Connect Thread");
+        mConnectThread = new ConnectThread(mDevice);
+        mConnectThread.start();
+
 
     }
 
@@ -223,16 +387,24 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void logSwitch (View view){
+        Log.e(TAG, "Button Hit");
         mRequestingLocationUpdates = !mRequestingLocationUpdates;
 
         if(mRequestingLocationUpdates) {
+            if (mBluetoothAdapter != null) {
+                //Toast toast = Toast.makeText(this, "Awating bluetooth sync...", Toast.LENGTH_SHORT);
+                //toast.show();
+            }
+            else{
+                overrideBT = true;
+            }
+            Toast toast = Toast.makeText(this,"Logging...", Toast.LENGTH_SHORT);
+            toast.show();
             mainButton.setText("Stop");
             startLocationUpdates();
         }
         else{
             mainButton.setText("Start");
-            //timer.cancel();
-            //logLocation.cancel();
             stopLocationUpdates();
             storeData();
         }
@@ -419,6 +591,17 @@ public class MainActivity extends AppCompatActivity {
             }
 
         }
+    }
+
+    public void startBTConnection(BluetoothDevice device, UUID uuid){
+        Log.d(TAG, "startBTConnection: Initializing RFCOM Bluetooth Connection.");
+
+    }
+
+    public void BToverride(View view){
+        overrideBT = true;
+        Toast toast = Toast.makeText(this, "Overriding BT...",Toast.LENGTH_SHORT);
+        toast.show();
     }
 
 }

@@ -14,19 +14,20 @@
         app:layout_constraintBottom_toTopOf="@+id/Button"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintRight_toRightOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.369" />
 
     <Button
         android:id="@+id/Button"
         android:layout_width="183dp"
-        android:layout_height="157dp"
+        android:layout_height="120dp"
+        android:layout_marginBottom="104dp"
         android:onClick="logSwitch"
         android:text="Start"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.5"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/logText" />
+        app:layout_constraintHorizontal_bias="0.502"
+        app:layout_constraintStart_toStartOf="parent" />
 
     <TextView
         android:id="@+id/fileName"
@@ -36,9 +37,9 @@
         android:textColor="@color/cast_expanded_controller_background_color"
         app:layout_constraintBottom_toTopOf="@+id/Button"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.5"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/logText" />
+        app:layout_constraintTop_toBottomOf="@+id/logText"
+        app:layout_constraintVertical_bias="0.316" />
 
     <Button
         android:id="@+id/newFileButton"
@@ -50,5 +51,21 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/Button" />
+
+    <Button
+        android:id="@+id/Override_BT_sync"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
+        android:onClick="BToverride"
+        android:text="Override BT Sync"
+        app:layout_constraintBottom_toTopOf="@+id/Button"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.502"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/fileName" />
 
 </android.support.constraint.ConstraintLayout>
